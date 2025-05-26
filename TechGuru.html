@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>TechGuru - Магазин электроники</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://unpkg.com/vuex@4"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f7fa; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    header { background: #35495e; color: white; padding: 15px 0; margin-bottom: 30px; }
+    nav { display: flex; justify-content: space-between; align-items: center; }
+    .cart-btn { position: relative; background: #41b883; border: none; color: white; padding: 8px 15px; border-radius: 4px; cursor: pointer; }
+    .cart-count { position: absolute; top: -8px; right: -8px; background: #ff5722; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+    .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+    .product-card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.3s; }
+    .product-card:hover { transform: translateY(-5px); }
+    .product-image { height: 160px; background: #eee; display: flex; align-items: center; justify-content: center; }
+    .product-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .product-info { padding: 15px; }
+    .product-title { font-weight: 600; margin: 0 0 10px; }
+    .product-price { color: #41b883; font-weight: 700; margin: 10px 0; }
+    .add-to-cart { width: 100%; background: #41b883; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; }
+    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+    .modal-content { background: white; width: 80%; max-width: 600px; max-height: 80vh; border-radius: 8px; padding: 20px; overflow-y: auto; }
+    .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .cart-item-actions button { background: #ff5722; color: white; border: none; width: 25px; height: 25px; border-radius: 50%; cursor: pointer; }
+    .checkout-btn { background: #41b883; color: white; border: none; padding: 10px 20px; border-radius: 4px; margin-top: 20px; cursor: pointer; width: 100%; }
+    .notification { position: fixed; top: 20px; right: 20px; background: #41b883; color: white; padding: 10px 15px; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 1001; }
+    .loading { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+    .form-group input, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+    .form-actions { display: flex; justify-content: space-between; margin-top: 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .category-title { grid-column: 1 / -1; font-size: 1.5em; margin: 30px 0 15px; padding-bottom: 10px; border-bottom: 2px solid #41b883; }
+    
+    /* Новые стили для улучшений */
+    .search-filter-container { display: flex; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+    .search-box { flex-grow: 1; min-width: 300px; padding: 8px 15px; border: 1px solid #ddd; border-radius: 4px; }
+    .filter-section { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .filter-title { margin-top: 0; margin-bottom: 10px; }
+    .filter-options { display: flex; gap: 15px; flex-wrap: wrap; }
+    .filter-option { display: flex; align-items: center; gap: 5px; }
+    .price-range { display: flex; gap: 10px; align-items: center; }
+    .price-range input { width: 80px; padding: 5px; }
+    .pagination { display: flex; justify-content: center; gap: 5px; margin-top: 20px; }
+    .pagination button { padding: 5px 10px; border: 1px solid #ddd; background: white; cursor: pointer; border-radius: 4px; }
+    .pagination button.active { background: #41b883; color: white; border-color: #41b883; }
+    .no-results { text-align: center; padding: 30px; font-size: 1.2em; color: #666; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="container">
+        <nav>
+          <h1>TechGuru - Магазин электроники</h1>
+          <button class="cart-btn" @click="showCart = true">
+            Корзина
+            <span class="cart-count" v-if="cartItemCount">{{ cartItemCount }}</span>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- Поиск и фильтры -->
+      <div class="search-filter-container">
+        <input 
+          type="text" 
+          class="search-box" 
+          placeholder="Поиск товаров..." 
+          v-model="searchQuery"
+          @input="resetPagination"
+        >
+        
+        <div class="filter-options">
+          <div class="filter-option">
+            <label for="sort">Сортировка:</label>
+            <select id="sort" v-model="sortOption" @change="resetPagination">
+              <option value="default">По умолчанию</option>
+              <option value="price-asc">Цена по возрастанию</option>
+              <option value="price-desc">Цена по убыванию</option>
+              <option value="name-asc">Название (А-Я)</option>
+              <option value="name-desc">Название (Я-А)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Фильтры по цене -->
+      <div class="filter-section">
+        <h3 class="filter-title">Фильтр по цене</h3>
+        <div class="price-range">
+          <input type="number" v-model="priceRange.min" placeholder="От" @change="resetPagination">
+          <span>-</span>
+          <input type="number" v-model="priceRange.max" placeholder="До" @change="resetPagination">
+          <span>руб.</span>
+        </div>
+      </div>
+
+      <div v-if="loading" style="text-align: center; padding: 50px;">
+        <div class="loading"></div>
+        <p>Загрузка товаров...</p>
+      </div>
+
+      <div v-else>
+        <!-- Ноутбуки и компьютеры -->
+        <h2 class="category-title">Ноутбуки и компьютеры</h2>
+        <div v-if="getProductsByCategory('laptops').length > 0">
+          <div class="products-grid">
+            <div 
+              class="product-card" 
+              v-for="product in getPaginatedProducts('laptops')" 
+              :key="product.id"
+            >
+              <div class="product-image">
+                <img :src="product.image || 'https://via.placeholder.com/250x160?text=No+Image'" :alt="product.title">
+              </div>
+              <div class="product-info">
+                <h3 class="product-title">{{ product.title }}</h3>
+                <p>{{ product.description }}</p>
+                <p class="product-price">{{ product.price.toLocaleString() }} руб.</p>
+                <button class="add-to-cart" @click="addToCart(product)">
+                  Добавить в корзину
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="pagination" v-if="getProductsByCategory('laptops').length > itemsPerPage">
+            <button 
+              v-for="page in getPageCount('laptops')" 
+              :key="page"
+              @click="setCurrentPage('laptops', page)"
+              :class="{ active: currentPages.laptops === page }"
+            >
+              {{ page }}
+            </button>
+          </div>
+        </div>
+        <div v-else class="no-results">
+          Товары не найдены
+        </div>
+
+        <!-- Смартфоны и гаджеты -->
+        <h2 class="category-title">Смартфоны и гаджеты</h2>
+        <div v-if="getProductsByCategory('smartphones').length > 0">
+          <div class="products-grid">
+            <div 
+              class="product-card" 
+              v-for="product in getPaginatedProducts('smartphones')" 
+              :key="product.id"
+            >
+              <div class="product-image">
+                <img :src="product.image || 'https://via.placeholder.com/250x160?text=No+Image'" :alt="product.title">
+              </div>
+              <div class="product-info">
+                <h3 class="product-title">{{ product.title }}</h3>
+                <p>{{ product.description }}</p>
+                <p class="product-price">{{ product.price.toLocaleString() }} руб.</p>
+                <button class="add-to-cart" @click="addToCart(product)">
+                  Добавить в корзину
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="pagination" v-if="getProductsByCategory('smartphones').length > itemsPerPage">
+            <button 
+              v-for="page in getPageCount('smartphones')" 
+              :key="page"
+              @click="setCurrentPage('smartphones', page)"
+              :class="{ active: currentPages.smartphones === page }"
+            >
+              {{ page }}
+            </button>
+          </div>
+        </div>
+        <div v-else class="no-results">
+          Товары не найдены
+        </div>
+
+        <!-- Аксессуары -->
+        <h2 class="category-title">Аксессуары</h2>
+        <div v-if="getProductsByCategory('accessories').length > 0">
+          <div class="products-grid">
+            <div 
+              class="product-card" 
+              v-for="product in getPaginatedProducts('accessories')" 
+              :key="product.id"
+            >
+              <div class="product-image">
+                <img :src="product.image || 'https://via.placeholder.com/250x160?text=No+Image'" :alt="product.title">
+              </div>
+              <div class="product-info">
+                <h3 class="product-title">{{ product.title }}</h3>
+                <p>{{ product.description }}</p>
+                <p class="product-price">{{ product.price.toLocaleString() }} руб.</p>
+                <button class="add-to-cart" @click="addToCart(product)">
+                  Добавить в корзину
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="pagination" v-if="getProductsByCategory('accessories').length > itemsPerPage">
+            <button 
+              v-for="page in getPageCount('accessories')" 
+              :key="page"
+              @click="setCurrentPage('accessories', page)"
+              :class="{ active: currentPages.accessories === page }"
+            >
+              {{ page }}
+            </button>
+          </div>
+        </div>
+        <div v-else class="no-results">
+          Товары не найдены
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно корзины -->
+    <div class="modal" v-if="showCart" @click.self="showCart = false">
+      <div class="modal-content">
+        <h2>Ваша корзина</h2>
+        
+        <div v-if="cart.length === 0">
+          <p>Корзина пуста</p>
+        </div>
+        
+        <div v-else>
+          <div class="cart-item" v-for="item in cart" :key="item.product.id">
+            <div>{{ item.product.title }}</div>
+            <div>
+              {{ item.product.price.toLocaleString() }} руб. × {{ item.quantity }} = {{ (item.product.price * item.quantity).toLocaleString() }} руб.
+            </div>
+            <div class="cart-item-actions">
+              <button @click="updateCartItem({ product: item.product, quantity: item.quantity - 1 })">-</button>
+              <span style="margin: 0 10px;">{{ item.quantity }}</span>
+              <button @click="updateCartItem({ product: item.product, quantity: item.quantity + 1 })">+</button>
+              <button @click="removeFromCart(item.product)" style="margin-left: 10px;">🗑️</button>
+            </div>
+          </div>
+          
+          <div style="text-align: right; margin-top: 20px; font-weight: bold;">
+            Итого: {{ cartTotal.toLocaleString() }} руб.
+          </div>
+          
+          <button class="checkout-btn" @click="startCheckout">
+            Оформить заказ
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно оформления заказа -->
+    <div class="modal" v-if="showCheckoutForm" @click.self="showCheckoutForm = false">
+      <div class="modal-content">
+        <h2>Оформление заказа</h2>
+        
+        <form @submit.prevent="submitOrder">
+          <div class="form-group">
+            <label for="name">ФИО:</label>
+            <input id="name" type="text" v-model="orderForm.name" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="email">Email:</label>
+            <input id="email" type="email" v-model="orderForm.email" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="phone">Телефон:</label>
+            <input id="phone" type="tel" v-model="orderForm.phone" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="address">Адрес доставки:</label>
+            <textarea id="address" v-model="orderForm.address" required></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="comment">Комментарий к заказу:</label>
+            <textarea id="comment" v-model="orderForm.comment"></textarea>
+          </div>
+          
+          <div class="form-actions">
+            <button type="button" @click="showCheckoutForm = false" style="background: #ccc;">Назад</button>
+            <button type="submit" class="checkout-btn">Подтвердить заказ</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="notification" v-if="notification.show" @click="hideNotification">
+      {{ notification.message }}
+    </div>
+  </div>
+
+  <script>
+    // Расширенный mockApi с кэшированием в localStorage
+    const mockApi = {
+      cacheKey: 'techguru_products_cache',
+      cacheExpiry: 30 * 60 * 1000, // 30 минут кэширования
+      
+      async fetchProducts() {
+        // Проверяем кэш в localStorage
+        const cachedData = this.getCachedData();
+        if (cachedData) {
+          console.log('Используем кэшированные данные');
+          return cachedData;
+        }
+        
+        // Имитируем запрос к API
+        return new Promise(resolve => {
+          setTimeout(() => {
+            const products = [
+              // Ноутбуки и компьютеры
+              { 
+                id: 1, 
+                title: 'Ноутбук ASUS ROG Strix G15', 
+                description: 'Игровой ноутбук, 15.6", Ryzen 7, RTX 3060', 
+                price: 89990, 
+                category: 'laptops',
+                image: 'https://via.placeholder.com/250x160?text=ASUS+ROG' 
+              },
+              { 
+                id: 2, 
+                title: 'MacBook Air M1', 
+                description: '13.3", Apple M1, 8GB, 256GB SSD', 
+                price: 79990, 
+                category: 'laptops',
+                image: 'https://via.placeholder.com/250x160?text=MacBook+Air'
+              },
+              { 
+                id: 3, 
+                title: 'Игровой ПК HP Omen', 
+                description: 'Intel i7, RTX 3070, 16GB RAM, 1TB SSD', 
+                price: 129990, 
+                category: 'laptops',
+                image: 'https://via.placeholder.com/250x160?text=HP+Omen'
+              },
+              { 
+                id: 4, 
+                title: 'Ноутбук Lenovo IdeaPad 5', 
+                description: '14", Ryzen 5, 16GB RAM, 512GB SSD', 
+                price: 54990, 
+                category: 'laptops',
+                image: 'https://via.placeholder.com/250x160?text=Lenovo+IdeaPad'
+              },
+              { 
+                id: 5, 
+                title: 'Моноблок Apple iMac 24"', 
+                description: 'M1, 8GB, 256GB SSD, 4.5K дисплей', 
+                price: 109990, 
+                category: 'laptops',
+                image: 'https://via.placeholder.com/250x160?text=iMac+24'
+              },
+              
+              // Смартфоны и гаджеты
+              { 
+                id: 6, 
+                title: 'iPhone 14 Pro', 
+                description: '6.1", 128GB, космический черный', 
+                price: 99990, 
+                category: 'smartphones',
+                image: 'https://via.placeholder.com/250x160?text=iPhone+14+Pro'
+              },
+              { 
+                id: 7, 
+                title: 'Samsung Galaxy S23 Ultra', 
+                description: '6.8", 256GB, S Pen, 200MP камера', 
+                price: 89990, 
+                category: 'smartphones',
+                image: 'https://via.placeholder.com/250x160?text=Galaxy+S23'
+              },
+              { 
+                id: 8, 
+                title: 'Xiaomi Redmi Note 12 Pro', 
+                description: '6.67", 128GB, AMOLED, 108MP', 
+                price: 24990, 
+                category: 'smartphones',
+                image: 'https://via.placeholder.com/250x160?text=Redmi+Note+12'
+              },
+              { 
+                id: 9, 
+                title: 'Электронная книга PocketBook 740', 
+                description: '7.8", 32GB, поддержка аудио', 
+                price: 19990, 
+                category: 'smartphones',
+                image: 'https://via.placeholder.com/250x160?text=PocketBook+740'
+              },
+              { 
+                id: 10, 
+                title: 'Умные часы Apple Watch Series 8', 
+                description: '45mm, GPS, экран Always-On', 
+                price: 34990, 
+                category: 'smartphones',
+                image: 'https://via.placeholder.com/250x160?text=Apple+Watch+8'
+              },
+              
+              // Аксессуары
+              { 
+                id: 11, 
+                title: 'Наушники Sony WH-1000XM5', 
+                description: 'Беспроводные с шумоподавлением', 
+                price: 29990, 
+                category: 'accessories',
+                image: 'https://via.placeholder.com/250x160?text=Sony+WH-1000XM5'
+              },
+              { 
+                id: 12, 
+                title: 'Клавиатура Logitech MX Keys', 
+                description: 'Беспроводная, подсветка, для Mac/Windows', 
+                price: 8990, 
+                category: 'accessories',
+                image: 'https://via.placeholder.com/250x160?text=Logitech+MX+Keys'
+              },
+              { 
+                id: 13, 
+                title: 'Внешний SSD Samsung T7', 
+                description: '1TB, USB 3.2, скорость до 1050MB/s', 
+                price: 8990, 
+                category: 'accessories',
+                image: 'https://via.placeholder.com/250x160?text=Samsung+T7'
+              },
+              { 
+                id: 14, 
+                title: 'Док-станция Dell WD19', 
+                description: '130W, 4K, Ethernet, USB-C', 
+                price: 14990, 
+                category: 'accessories',
+                image: 'https://via.placeholder.com/250x160?text=Dell+WD19'
+              },
+              { 
+                id: 15, 
+                title: 'Роутер ASUS RT-AX82U', 
+                description: 'Wi-Fi 6, 5400 Мбит/с, игровой режим', 
+                price: 12990, 
+                category: 'accessories',
+                image: 'https://via.placeholder.com/250x160?text=ASUS+RT-AX82U'
+              },
+              { 
+                id: 16, 
+                title: 'Power Bank Xiaomi 20000 mAh', 
+                description: 'Быстрая зарядка 18W, два USB', 
+                price: 2990, 
+                category: 'accessories',
+                image: 'https://via.placeholder.com/250x160?text=Xiaomi+Power+Bank'
+              },
+              { 
+                id: 17, 
+                title: 'Кабель USB-C Thunderbolt 4', 
+                description: '1м, 40Gbps, 100W', 
+                price: 2490, 
+                category: 'accessories',
+                image: 'https://via.placeholder.com/250x160?text=Thunderbolt+4'
+              }
+            ];
+            
+            // Сохраняем в кэш
+            this.cacheData(products);
+            
+            resolve(products);
+          }, 1000);
+        });
+      },
+      
+      getCachedData() {
+        const cached = localStorage.getItem(this.cacheKey);
+        if (!cached) return null;
+        
+        const { data, timestamp } = JSON.parse(cached);
+        const now = Date.now();
+        
+        // Проверяем не устарели ли данные
+        if (now - timestamp > this.cacheExpiry) {
+          localStorage.removeItem(this.cacheKey);
+          return null;
+        }
+        
+        return data;
+      },
+      
+      cacheData(data) {
+        const cache = {
+          data,
+          timestamp: Date.now()
+        };
+        localStorage.setItem(this.cacheKey, JSON.stringify(cache));
+      },
+      
+      clearCache() {
+        localStorage.removeItem(this.cacheKey);
+      },
+      
+      checkout: (orderData) => {
+        // Оформление заказа не кэшируем
+        return new Promise(resolve => {
+          setTimeout(() => {
+            console.log('Заказ оформлен:', orderData);
+            resolve({ 
+              success: true, 
+              orderId: Math.floor(Math.random() * 1000000),
+              deliveryDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString()
+            });
+          }, 1500);
+        });
+      }
+    };
+
+    // Создаём хранилище Vuex
+    const store = Vuex.createStore({
+      state: {
+        products: [],
+        loading: false,
+        cart: [],
+        notification: { show: false, message: '' },
+        lastFetchTime: null
+      },
+      mutations: {
+        SET_PRODUCTS(state, products) {
+          state.products = products;
+          state.lastFetchTime = Date.now();
+        },
+        SET_LOADING(state, isLoading) {
+          state.loading = isLoading;
+        },
+        ADD_TO_CART(state, { product, quantity = 1 }) {
+          const existingItem = state.cart.find(item => item.product.id === product.id);
+          if (existingItem) {
+            existingItem.quantity += quantity;
+          } else {
+            state.cart.push({ product, quantity });
+          }
+        },
+        UPDATE_CART_ITEM(state, { product, quantity }) {
+          const item = state.cart.find(item => item.product.id === product.id);
+          if (item) {
+            if (quantity <= 0) {
+              state.cart = state.cart.filter(item => item.product.id !== product.id);
+            } else {
+              item.quantity = quantity;
+            }
+          }
+        },
+        REMOVE_FROM_CART(state, product) {
+          state.cart = state.cart.filter(item => item.product.id !== product.id);
+        },
+        CLEAR_CART(state) {
+          state.cart = [];
+        },
+        SHOW_NOTIFICATION(state, message) {
+          state.notification = { show: true, message };
+          setTimeout(() => {
+            state.notification.show = false;
+          }, 3000);
+        },
+        HIDE_NOTIFICATION(state) {
+          state.notification.show = false;
+        }
+      },
+      actions: {
+        async fetchProducts({ commit, state }) {
+          // Проверяем, нужно ли обновлять данные
+          const now = Date.now();
+          const cacheValid = state.lastFetchTime && 
+                           (now - state.lastFetchTime) < mockApi.cacheExpiry;
+          
+          if (cacheValid && state.products.length > 0) {
+            console.log('Используем кэшированные данные из состояния');
+            return;
+          }
+          
+          commit('SET_LOADING', true);
+          try {
+            const products = await mockApi.fetchProducts();
+            commit('SET_PRODUCTS', products);
+          } catch (error) {
+            commit('SHOW_NOTIFICATION', 'Ошибка загрузки товаров');
+            console.error(error);
+          } finally {
+            commit('SET_LOADING', false);
+          }
+        },
+        addToCart({ commit }, product) {
+          commit('ADD_TO_CART', { product });
+          commit('SHOW_NOTIFICATION', `${product.title} добавлен в корзину`);
+        },
+        updateCartItem({ commit }, { product, quantity }) {
+          commit('UPDATE_CART_ITEM', { product, quantity });
+        },
+        removeFromCart({ commit }, product) {
+          commit('REMOVE_FROM_CART', product);
+          commit('SHOW_NOTIFICATION', `${product.title} удалён из корзины`);
+        },
+        async checkout({ commit, state }, orderData) {
+          commit('SET_LOADING', true);
+          try {
+            const response = await mockApi.checkout({
+              ...orderData,
+              products: state.cart,
+              total: state.cart.reduce((total, item) => total + (item.product.price * item.quantity), 0)
+            });
+            
+            if (response.success) {
+              commit('SHOW_NOTIFICATION', `Заказ #${response.orderId} оформлен успешно! Доставка ${response.deliveryDate}`);
+              commit('CLEAR_CART');
+              return true;
+            }
+          } catch (error) {
+            commit('SHOW_NOTIFICATION', 'Ошибка оформления заказа');
+            console.error(error);
+            return false;
+          } finally {
+            commit('SET_LOADING', false);
+          }
+        }
+      },
+      getters: {
+        cartItemCount: state => state.cart.reduce((count, item) => count + item.quantity, 0),
+        cartTotal: state => state.cart.reduce((total, item) => total + (item.product.price * item.quantity), 0),
+        isProductInCart: state => product => state.cart.some(item => item.product.id === product.id),
+        laptops: state => state.products.filter(p => p.category === 'laptops'),
+        smartphones: state => state.products.filter(p => p.category === 'smartphones'),
+        accessories: state => state.products.filter(p => p.category === 'accessories')
+      }
+    });
+
+    // Создаём приложение Vue
+    const app = Vue.createApp({
+      data() {
+        return {
+          showCart: false,
+          showCheckoutForm: false,
+          orderForm: {
+            name: '',
+            email: '',
+            phone: '',
+            address: '',
+            comment: ''
+          },
+          searchQuery: '',
+          sortOption: 'default',
+          priceRange: {
+            min: null,
+            max: null
+          },
+          itemsPerPage: 6,
+          currentPages: {
+            laptops: 1,
+            smartphones: 1,
+            accessories: 1
+          }
+        };
+      },
+      computed: {
+        ...Vuex.mapState(['products', 'loading', 'cart', 'notification']),
+        ...Vuex.mapGetters(['cartItemCount', 'cartTotal', 'laptops', 'smartphones', 'accessories']),
+      },
+      methods: {
+        ...Vuex.mapActions(['fetchProducts', 'addToCart', 'updateCartItem', 'removeFromCart', 'checkout']),
+        hideNotification() {
+          this.$store.commit('HIDE_NOTIFICATION');
+        },
+        startCheckout() {
+          this.showCart = false;
+          this.showCheckoutForm = true;
+        },
+        async submitOrder() {
+          const success = await this.checkout(this.orderForm);
+          if (success) {
+            this.showCheckoutForm = false;
+            this.orderForm = {
+              name: '',
+              email: '',
+              phone: '',
+              address: '',
+              comment: ''
+            };
+          }
+        },
+        
+        getProductsByCategory(category) {
+          let products = this[category] || [];
+          
+          if (this.searchQuery) {
+            const query = this.searchQuery.toLowerCase();
+            products = products.filter(p => 
+              p.title.toLowerCase().includes(query) || 
+              p.description.toLowerCase().includes(query)
+            );
+          }
+          
+          if (this.priceRange.min) {
+            products = products.filter(p => p.price >= this.priceRange.min);
+          }
+          if (this.priceRange.max) {
+            products = products.filter(p => p.price <= this.priceRange.max);
+          }
+          
+          switch (this.sortOption) {
+            case 'price-asc':
+              return [...products].sort((a, b) => a.price - b.price);
+            case 'price-desc':
+              return [...products].sort((a, b) => b.price - a.price);
+            case 'name-asc':
+              return [...products].sort((a, b) => a.title.localeCompare(b.title));
+            case 'name-desc':
+              return [...products].sort((a, b) => b.title.localeCompare(a.title));
+            default:
+              return products;
+          }
+        },
+        
+        getPaginatedProducts(category) {
+          const products = this.getProductsByCategory(category);
+          const start = (this.currentPages[category] - 1) * this.itemsPerPage;
+          const end = start + this.itemsPerPage;
+          return products.slice(start, end);
+        },
+        
+        getPageCount(category) {
+          const products = this.getProductsByCategory(category);
+          return Math.ceil(products.length / this.itemsPerPage);
+        },
+        
+        setCurrentPage(category, page) {
+          this.currentPages = { ...this.currentPages, [category]: page };
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+        
+        resetPagination() {
+          this.currentPages = {
+            laptops: 1,
+            smartphones: 1,
+            accessories: 1
+          };
+        }
+      },
+      created() {
+        this.fetchProducts();
+      }
+    });
+
+    // Подключаем хранилище к приложению
+    app.use(store);
+
+    // Монтируем приложение
+    app.mount('#app');
+  </script>
+</body>
+</html>
